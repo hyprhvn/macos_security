@@ -6,6 +6,8 @@ import re
 import sys
 import csv
 import os
+import yaml
+import glob
 from pathlib import Path
 from typing import Any
 
@@ -45,12 +47,15 @@ def generate_mapping(args: argparse.Namespace) -> None:
     rules: list[Macsecurityrule] = Macsecurityrule.collect_all_rules(
         args.os_name, args.os_version
     )
+    print(args)
     custom_rules: list[Macsecurityrule] = []
     print(args)
     # csv_data: dict[str, Any] = open_file(args.csv)
     for rule in rules:
         # sub_directory = rule.split(".yaml")[0].split("/")[2]
-        sub_directory = "os"
+        sub_directory = rule.rule_id.split("_")[0]
+        if sub_directory == "system":
+            sub_directory = "system_settings"
         
         if "supplemental" in rule or "srg" in rule:
             continue
@@ -81,8 +86,7 @@ def generate_mapping(args: argparse.Namespace) -> None:
             for row in reader:
 
                 if args.framework != nist_header:
-                    sys.exit(str(args.framework) + " not found in CSV")
-
+                    sys.exit(str(args.framework) + " not found in CSV")                
                 if "N/A" in row[nist_header]:
                     continue
 
@@ -103,21 +107,20 @@ def generate_mapping(args: argparse.Namespace) -> None:
                                 
 
                                 references = []
-                                if "custom_refs" not in rule_yaml['references']:
+                                
+                                # if "custom_refs" not in rule_yaml['references']:
+                                if rule_yaml['references']['custom_refs'] is None:
                                     
-                                    # references = rule_yaml['references'][framework_main][framework_sub]
-                                    # references = rule_yaml.references.framework_main.framework_sub
-                                    references = rule_yaml.references
-                                    if rule_yaml.rule_id == "os_airdrop_disable":
-                                        print("-------")
-                                        print(references)
-                                        print(references['nist'])
-                                        topleveltype = references['nist']
-                                        print(topleveltype['nist_800_53r5'])
-                                        print(type(references['nist']))
-                                        sys.exit("i am done")
+                                    references = rule_yaml.references[framework_main][framework_sub]
+                                
+                                    if framework_sub == "800-53r5" or "800-171r3":
+                                        framework_sub = "nist_{}".format(framework_sub.replace("-","_"))
+                                    
+                                        references = rule_yaml.references[framework_main][framework_sub]
+                                        
+                                        
                                 else:
-                                    references = rule_yaml['references']['custom'][framework_main][framework_sub]
+                                    references = rule_yaml['references']['custom_refs'][framework_main][framework_sub]
 
                                 for yaml_control in references:
                                     if duplicate == str(yaml_control).split("(")[0]:
@@ -133,18 +136,36 @@ def generate_mapping(args: argparse.Namespace) -> None:
                                         row_array = str(row[other_header]).split(",")
                                         for item in row_array:
                                             control_array.append(item)
-                                            print(rule_yaml['id'] + " - " + str(args.framework) + " " + str(yaml_control) + " maps to " + other_header + " " + item)
+                                            print(rule_yaml['rule_id'] + " - " + str(args.framework) + " " + str(yaml_control) + " maps to " + other_header + " " + item)
 
 
                             else:
-
+                                
                                 references = []
-                                if "custom" not in rule_yaml['references']:
-                                    references = rule_yaml['references'][args.framework]
+                                # if "custom" not in rule_yaml['references']:
+                                
+                                if rule_yaml['references']['custom_refs'] is None:
+                                    # framework = args.framework
+                                    framework_main = "nist"
+                                    if args.framework == "disa_stig" or args.framework == "cci" or args.framework == "srg" or args.framework == "cmmc" or args.framework == "sfr":
+                                        framework_main = "disa"
+                                    if args.framework == "benchmark" or args.framework == "controls_v8":
+                                        framework_main = "cis"
+                                    if args.framework == "indigo":
+                                        framework_main = "bsi"
+                                    framework_sub = args.framework
+                                
+                                    if args.framework == "800-53r5" or "800-171r3":
+                                    #     framework = "nist_{}".format(args.framework.replace("-","_"))
+                                        framework_sub = "nist_{}".format(args.framework.replace("-","_"))
+                                    
+                                    
+                                    references = rule_yaml['references'][framework_main][framework_sub]
+                                    
                                 else:
-                                    references = rule_yaml['references']['custom'][args.framework]
+                                    references = rule_yaml['references']['custom_refs'][args.framework]
 
-                                for yaml_control in references:
+                                for yaml_control in references:                                    
                                     if duplicate == str(yaml_control).split("(")[0]:
                                         continue
                                     if csv_duplicate == str(row[other_header]):
@@ -156,7 +177,7 @@ def generate_mapping(args: argparse.Namespace) -> None:
                                         row_array = str(row[other_header]).split(",")
                                         for item in row_array:
                                             control_array.append(item)
-                                            print(rule_yaml['id'] + " - " + str(args.framework) + " " + str(yaml_control) + " maps to " + other_header + " " + item)
+                                            print(rule_yaml['rule_id'] + " - " + str(args.framework) + " " + str(yaml_control) + " maps to " + other_header + " " + item)
 
                         except:
                             continue
@@ -165,7 +186,6 @@ def generate_mapping(args: argparse.Namespace) -> None:
             continue
 
         custom_rule = '''references:
-  custom:
     {}:'''.format(other_header)
 
         for control in control_array:
@@ -175,24 +195,196 @@ def generate_mapping(args: argparse.Namespace) -> None:
         custom_rule = custom_rule + '''
 tags:
   - {}'''.format(other_header)
+        
+        output_dir: Path = Path(config["output_dir"], other_header.lower())
 
-        if os.path.isdir("../build/" + other_header) == False:
-            os.mkdir("../build/" + other_header)
-        if os.path.isdir("../build/" + other_header + "/rules/") == False:
-            os.mkdir("../build/" + other_header + "/rules/")
-        if os.path.isdir("../build/" + other_header + "/rules/" + sub_directory) == False:
-            os.mkdir("../build/" + other_header + "/rules/" + sub_directory)
+        rule_path = output_dir / "rules" / sub_directory
+        rule_path.mkdir(parents=True, exist_ok=True)
 
         try:
-            with open("../build/" + other_header + "/rules/" + sub_directory + "/" + rule_yaml['id'] + ".yaml", 'w') as r:
+            with open(str(rule_path) + "/" + rule_yaml['rule_id'] + ".yaml", 'w') as r:
                 custom_yaml = r.read()
 
                 custom_yaml = custom_yaml.replace(other_header + ": ", custom_rule)
-                with open("../build/" + other_header + "/rules/" + sub_directory + "/" + rule_yaml['id'] + ".yaml", 'w') as fw:
+                with open(str(rule_path) + "/" + rule_yaml['rule_id'] + ".yaml", 'w') as fw:
                     fw.write(custom_yaml)
         except:
-                with open("../build/" + other_header + "/rules/" + sub_directory + "/" + rule_yaml['id'] + ".yaml", 'w') as fw:
+                with open(str(rule_path) + "/" + rule_yaml['rule_id'] + ".yaml", 'w') as fw:
                     fw.write(custom_rule)
+
+        audit = []
+        auth = []
+        icloud = []
+        os_section = []
+        pwpolicy = []
+        system_settings = []
+        sysprefs = []
+        inherent = []
+        na = []
+        perm = []
+
+        for rule in glob.glob(str(output_dir) + '/rules/*/*.yaml'):
+            if "supplemental" in rule or "srg" in rule or "baseline" in rule:
+                continue
+            with open(rule) as r:
+                custom_rule = yaml.load(r, Loader=yaml.SafeLoader)
+                
+                rule_id = rule.split(".yaml")[0].split("/")[-1]
+
+
+                if other_header in custom_rule['tags']:
+                    if "inherent" in rule_yaml['tags']:
+                        inherent.append(rule_id)
+                        continue
+                    if "permanent" in custom_rule['tags']:
+                        perm.append(rule_id)
+                        continue
+                    if "n_a" in custom_rule['tags']:
+                        na.append(rule_id)
+                        continue
+                    if "/audit/" in rule:
+                        audit.append(rule_id)
+                        continue
+                    if "/auth/" in rule:
+                        auth.append(rule_id)
+                        continue
+                    if "/icloud/" in rule:
+                        icloud.append(rule_id)
+                        continue
+                    if "/os/" in rule:
+                        os_section.append(rule_id)
+                        continue
+                    if "/pwpolicy/" in rule:
+                        pwpolicy.append(rule_id)
+                        continue
+                    if "/system_settings/" in rule:
+                        system_settings.append(rule_id)
+                        continue
+                    if "/settings/" in rule:
+                        sysprefs.append(rule_id)
+                        continue
+
+
+        full_baseline = '''title: "{1} {2}: Security Configuration - {0}"
+description: |
+This guide describes the actions to take when securing a {1} {2} system against the {0}.
+authors:
+- name: (ENTER AUTHOR NAME)
+  organization: (ENTER ORG NAME)
+parent_values: recommended
+platform:
+  os: {1}
+  version: {2}
+profile:'''.format(other_header,args.os_name,args.os_version)
+
+        if len(audit) != 0:
+
+            full_baseline = full_baseline + '''
+- section: Auditing
+  rules:'''
+            audit.sort()
+
+            for rule in audit:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+        if len(auth) != 0:
+            full_baseline = full_baseline + '''
+- section: Authentication
+  rules:'''
+            auth.sort()
+
+            for rule in auth:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+
+        if len(system_settings) != 0:
+            full_baseline = full_baseline + '''
+- section: System Settings
+  rules:'''
+            system_settings.sort()
+
+            for rule in system_settings:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+
+        if len(icloud) != 0:
+            full_baseline = full_baseline + '''
+- section: iCloud
+  rules:'''
+            icloud.sort()
+            for rule in icloud:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+                
+        if len(os_section) != 0 and args.os_name == "os":
+            full_baseline = full_baseline + '''
+- section: Operating System
+  rules:'''
+            os_section.sort()
+            for rule in os_section:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+
+        if len(pwpolicy) != 0:
+            full_baseline = full_baseline + '''
+- section: Password Policy
+  rules:'''
+            pwpolicy.sort()
+            for rule in pwpolicy:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+
+        if len(inherent) != 0:
+            full_baseline = full_baseline + '''
+- section: Inherent
+  rules:'''
+            inherent.sort()
+            for rule in inherent:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+
+        if len(perm) != 0:
+            full_baseline = full_baseline + '''
+- section: Permanent
+  rules:'''
+            perm.sort()
+            for rule in perm:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+
+        if len(na) != 0:
+            full_baseline = full_baseline + '''
+- section: Not Applicable
+  rules:'''
+            na.sort()
+            for rule in na:
+                full_baseline = full_baseline + '''
+  - {}'''.format(rule)
+
+#         listofsupplementals = str()
+#         for supp_rule in glob.glob('../rules/supplemental/*.yaml',recursive=True):
+#             listofsupplementals = listofsupplementals + '''- {}
+#         '''.format(os.path.basename(supp_rule).split(".")[0])
+#         full_baseline = full_baseline + '''
+# - section: Supplemental
+#   rules:
+#         {}
+#         '''.format(listofsupplementals)
+
+    try:
+        output_dir: Path = Path(config["output_dir"], other_header.lower())
+
+        baseline_path = output_dir / "baselines"
+        baseline_path.mkdir(parents=True, exist_ok=True)
+
+        
+        with open(str(baseline_path) + "/" + other_header.lower().replace(" ","_") + ".yaml",'w') as fw:
+            fw.write(full_baseline)
+            print(other_header.lower().replace(" ","_") + ".yaml baseline file created in build/" + other_header + "/baseline/")
+
+        print("Move all of the folders in rules into the custom folder.")
+    except:
+        print("No controls mapped were found in rule files.")        
 
     # print(args.csv)
     # if len(csv_data.keys()) < 2:

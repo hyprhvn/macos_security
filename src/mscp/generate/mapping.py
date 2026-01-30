@@ -316,11 +316,11 @@ profile:'''.format(other_header,args.os_name,args.os_version)
                 full_baseline = full_baseline + '''
   - {}'''.format(rule)
                 
-        if len(os_section) != 0 and args.os_name == "os":
+        if len(os_section) != 0:
             full_baseline = full_baseline + '''
 - section: Operating System
   rules:'''
-            os_section.sort()
+            os_section.sort()            
             for rule in os_section:
                 full_baseline = full_baseline + '''
   - {}'''.format(rule)
@@ -380,7 +380,7 @@ profile:'''.format(other_header,args.os_name,args.os_version)
         
         with open(str(baseline_path) + "/" + other_header.lower().replace(" ","_") + ".yaml",'w') as fw:
             fw.write(full_baseline)
-            print(other_header.lower().replace(" ","_") + ".yaml baseline file created in build/" + other_header + "/baseline/")
+            print(other_header.lower().replace(" ","_") + ".yaml baseline file created in build/" + other_header.lower() + "/baseline/")
 
         print("Move all of the folders in rules into the custom folder.")
     except:

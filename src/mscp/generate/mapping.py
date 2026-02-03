@@ -266,8 +266,8 @@ tags:
 
 
         full_baseline = '''title: "{1} {2}: Security Configuration - {0}"
-description: |
-This guide describes the actions to take when securing a {1} {2} system against the {0}.
+description: |-
+  This guide describes the actions to take when securing a {1} {2} system against the {0}.
 authors:
 - name: (ENTER AUTHOR NAME)
   organization: (ENTER ORG NAME)

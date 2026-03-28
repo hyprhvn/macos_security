@@ -17,3 +17,7 @@ The resulting configuration profile and compliance script can be generated as fo
 ```
 
 They can then be found in `build/enkime`.
+
+## Extras
+
+There are extra `.plist` files in `misc/extra_plists` that must be uploaded to the devices via Jamf.
